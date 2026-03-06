@@ -46,9 +46,11 @@ async def edit_user(user_id: str, email: str = None, kyc_verified: bool = None):
 
     return {"message": "User not found"}
 
+
 @router.put("/unsuspend/{user_id}")
 async def unsuspend_user(user_id: str):
     return await admin_service.unsuspend_user(user_id)
+
 
 @router.delete("/delete-user/{user_id}")
 async def delete_user(user_id: str):

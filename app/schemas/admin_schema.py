@@ -20,3 +20,8 @@ class TransactionResponse(BaseModel):
 class SuspendUser(BaseModel):
     user_id: str
     reason: Optional[str] = None
+
+
+class UserStatusUpdate(BaseModel):
+    user_id: str
+    status: str

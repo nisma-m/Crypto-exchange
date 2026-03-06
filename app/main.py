@@ -5,7 +5,6 @@ from app.websocket.routes import router as websocket_router
 from app.api import ws_routes
 from app.api import admin_routes
 
-
 # Trading module imports
 from app.trading.routes.trading_routes import router as trading_routes
 from app.trading.websocket.trading_ws_routes import router as trading_ws_router
@@ -24,8 +23,8 @@ app.include_router(trading_routes, prefix="/trading")  # Trading REST endpoints
 # ------------------------------
 # WebSocket Routes
 # ------------------------------
-app.include_router(websocket_router)                 # Existing general WS
-app.include_router(trading_ws_router)               # Trading WS
+app.include_router(websocket_router)                 
+app.include_router(trading_ws_router)
 
 app.include_router(admin_routes.router)
 
