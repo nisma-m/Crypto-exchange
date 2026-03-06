@@ -19,14 +19,13 @@ app.include_router(wallet_routes.router, prefix="/wallet")
 app.include_router(transaction_routes.router, prefix="/transactions")
 app.include_router(security_routes.router, prefix="/security")
 app.include_router(trading_routes, prefix="/trading")  # Trading REST endpoints
+app.include_router(admin_routes.router)
 
 # ------------------------------
 # WebSocket Routes
 # ------------------------------
 app.include_router(websocket_router)                 # Existing general WS
 app.include_router(trading_ws_router)               # Trading WS
-
-app.include_router(admin_routes.router)
 
 # Old-style WS route for backward compatibility
 @app.websocket("/ws/{user_id}")
@@ -39,6 +38,3 @@ async def websocket(user_id: str, websocket: WebSocket):
 @app.get("/")
 async def root():
     return {"message": "Crypto Exchange Backend Running"}
-
-
-

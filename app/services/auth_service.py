@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from app.database import users_collection
 from app.core.security import hash_password, verify_password
 from app.core.jwt import create_access_token
@@ -11,13 +12,16 @@ async def register_user(email: str, password: str):
     existing = await users_collection.find_one({"email": email})
 
     if existing:
-        raise Exception("User already exists")
+        raise HTTPException(status_code=400, detail="User already exists")
 
     hashed = hash_password(password)
 
     secret = generate_2fa_secret()
 
     user_doc = create_user_document(email, hashed, secret)
+
+    # 👇 default field for suspension
+    user_doc["is_suspended"] = False
 
     result = await users_collection.insert_one(user_doc)
 
@@ -34,15 +38,20 @@ async def register_user(email: str, password: str):
         "twofa_secret": secret
     }
 
+
 async def login_user(email: str, password: str):
 
     user = await users_collection.find_one({"email": email})
 
     if not user:
-        raise Exception("User not found")
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # 👇 check if account suspended
+    if user.get("is_suspended") == True:
+        raise HTTPException(status_code=403, detail="Account suspended by admin")
 
     if not verify_password(password, user["password"]):
-        raise Exception("Invalid password")
+        raise HTTPException(status_code=401, detail="Invalid password")
 
     user_id = str(user["_id"])
 
