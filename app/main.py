@@ -3,6 +3,7 @@ from fastapi import FastAPI, WebSocket
 from app.api import auth_routes, wallet_routes, transaction_routes, security_routes
 from app.websocket.routes import router as websocket_router
 from app.api import ws_routes
+from app.api import admin_routes
 
 # Trading module imports
 from app.trading.routes.trading_routes import router as trading_routes
@@ -25,6 +26,8 @@ app.include_router(trading_routes, prefix="/trading")  # Trading REST endpoints
 app.include_router(websocket_router)                 # Existing general WS
 app.include_router(trading_ws_router)               # Trading WS
 
+app.include_router(admin_routes.router)
+
 # Old-style WS route for backward compatibility
 @app.websocket("/ws/{user_id}")
 async def websocket(user_id: str, websocket: WebSocket):
@@ -36,3 +39,6 @@ async def websocket(user_id: str, websocket: WebSocket):
 @app.get("/")
 async def root():
     return {"message": "Crypto Exchange Backend Running"}
+
+
+
