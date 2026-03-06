@@ -24,3 +24,6 @@ async def login(email: str, password: str):
         "message": "Login successful",
         "data": token
     }
+
+    if user.get("is_suspended"):
+        raise Exception("Account suspended by admin")
