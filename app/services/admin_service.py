@@ -1,7 +1,9 @@
 from bson import ObjectId
 from app.database import users_collection, transactions_collection
+from app.database import trading_trades_collection
 import datetime
 import uuid
+
 
 # -----------------------------
 # User Management
@@ -144,3 +146,15 @@ async def reject_withdrawal(transaction_id: str, admin_id: str):
         }}
     )
     return result.modified_count > 0
+
+async def get_all_trades():
+
+    trades = []
+
+    async for trade in trading_trades_collection.find():
+
+        trade["_id"] = str(trade["_id"])
+        trades.append(trade)
+
+    return trades
+
