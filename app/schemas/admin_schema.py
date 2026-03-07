@@ -24,3 +24,12 @@ class UserStatusUpdate(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+class TradeResponse(BaseModel):
+    id: str
+    user_id: str
+    symbol: str
+    price: float
+    quantity: float
+    side: str
+    timestamp: str
