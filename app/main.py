@@ -1,9 +1,7 @@
 # crypto_exchange/app/main.py
 from fastapi import FastAPI, WebSocket
-from app.api import auth_routes, wallet_routes, transaction_routes, security_routes
+from app.api import auth_routes, wallet_routes, transaction_routes, security_routes, ws_routes, admin_routes
 from app.websocket.routes import router as websocket_router
-from app.api import ws_routes
-from app.api import admin_routes
 
 # Trading module imports
 from app.trading.routes.trading_routes import router as trading_routes
@@ -18,14 +16,14 @@ app.include_router(auth_routes.router, prefix="/auth")
 app.include_router(wallet_routes.router, prefix="/wallet")
 app.include_router(transaction_routes.router, prefix="/transactions")
 app.include_router(security_routes.router, prefix="/security")
-app.include_router(trading_routes, prefix="/trading")  # Trading REST endpoints
-app.include_router(admin_routes.router)
+app.include_router(trading_routes, prefix="/trading")
+app.include_router(admin_routes.router)  # Admin endpoints
 
 # ------------------------------
 # WebSocket Routes
 # ------------------------------
-app.include_router(websocket_router)                 # Existing general WS
-app.include_router(trading_ws_router)               # Trading WS
+app.include_router(websocket_router)
+app.include_router(trading_ws_router)
 
 # Old-style WS route for backward compatibility
 @app.websocket("/ws/{user_id}")

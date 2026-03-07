@@ -1,3 +1,4 @@
+# crypto_exchange/app/schemas/admin_schema.py
 from pydantic import BaseModel
 from typing import Optional
 
@@ -21,3 +22,6 @@ class TransactionResponse(BaseModel):
 class SuspendUser(BaseModel):
     user_id: str
     reason: Optional[str] = None
+
+class MessageResponse(BaseModel):
+    message: str
