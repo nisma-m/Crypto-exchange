@@ -4,3 +4,8 @@ __pycache__/
 venv/git add .
 __pycache__/
 *.pyc
+venv/
+*.pyc
+__pycache__/
+crypto_exchange.db
+git add app/ *
