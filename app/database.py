@@ -31,7 +31,6 @@ async def create_indexes():
     )
 
     await trading_orders_collection.create_index("order_id", unique=True)
-
     await trading_trades_collection.create_index("trade_id", unique=True)
 
     # helpful for admin monitoring
