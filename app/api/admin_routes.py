@@ -11,12 +11,28 @@ from app.api.admin_ws import broadcast_alert
 from app.models.activity_log import create_activity_log
 from app.core.roles import require_role
 from datetime import datetime, timedelta
+from bson import ObjectId
+from fastapi import APIRouter, Depends
+from app.core.roles import role_required
+
 
 
 router = APIRouter(
     prefix="/admin",
     tags=["Admin"]
 )
+
+async def check_suspicious_withdrawal(user_id: str, amount: float):
+    # Threshold: withdrawals > 50,000 flagged
+    if amount > 50000:
+        alert = {
+            "type": "suspicious_withdrawal",
+            "message": f"User {user_id} attempted withdrawal of {amount}",
+            "status": "active",
+            "timestamp": datetime.utcnow()
+        }
+        await db.alerts.insert_one(alert)
+
 
 # -----------------------------
 # User Routes
@@ -128,19 +144,59 @@ async def seed_test_withdrawal(current_admin: dict = Depends(get_current_admin))
 # Withdrawal Approval
 # -----------------------------
 
-@router.put("/withdrawal/approve/{transaction_id}", response_model=MessageResponse)
-async def approve_withdrawal_endpoint(transaction_id: str, admin_id: str = Query(...), current_admin: dict = Depends(get_current_admin)):
-    result = await approve_withdrawal(transaction_id, admin_id)
-    if not result:
-        raise HTTPException(status_code=400, detail="Cannot approve withdrawal")
+
+@router.put("/withdrawal/approve/{transaction_id}")
+def approve_withdrawal(
+    transaction_id: str,
+    admin_id: str,
+    current_admin: dict = Depends(role_required("super_admin"))
+):
+    try:
+        tx_id = ObjectId(transaction_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid transaction_id format")
+
+    transaction = db.transactions.find_one({"_id": tx_id})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    if transaction.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Transaction not pending")
+
+    db.transactions.update_one(
+        {"_id": tx_id},
+        {"$set": {"status": "approved", "approved_by": admin_id}}
+    )
     return {"message": "Withdrawal approved successfully"}
 
-@router.put("/withdrawal/reject/{transaction_id}", response_model=MessageResponse)
-async def reject_withdrawal_endpoint(transaction_id: str, admin_id: str = Query(...), current_admin: dict = Depends(get_current_admin)):
-    result = await reject_withdrawal(transaction_id, admin_id)
-    if not result:
+
+
+# Reject Withdrawal
+@router.put("/withdrawal/reject/{transaction_id}")
+def reject_withdrawal(
+    transaction_id: str,
+    admin_id: str,
+    current_admin: dict = Depends(role_required("super_admin"))
+):
+    try:
+        tx_id = ObjectId(transaction_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid transaction_id format")
+
+    transaction = db.transactions.find_one({"_id": tx_id})
+    if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
+
+    if transaction.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Transaction not pending")
+
+    db.transactions.update_one(
+        {"_id": tx_id},
+        {"$set": {"status": "rejected", "rejected_by": admin_id}}
+    )
     return {"message": "Withdrawal rejected successfully"}
+
+
 
 @router.get("/trades", operation_id="get_all_trades_service")
 async def get_all_trades(current_admin: dict = Depends(get_current_admin)):
@@ -300,3 +356,190 @@ async def export_activity_logs(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=activity_logs.csv"}
     )
+
+@router.get("/transactions", operation_id="list_transactions", dependencies=[Depends(require_role(["super_admin", "auditor"]))])
+async def list_transactions(
+    type: str = Query(None, description="Filter by transaction type (deposit/withdrawal)"),
+    status: str = Query(None, description="Filter by status (pending/approved/rejected)"),
+    user_id: str = Query(None, description="Filter by user ID"),
+    from_date: str = Query(None, description="Start date in YYYY-MM-DD format"),
+    to_date: str = Query(None, description="End date in YYYY-MM-DD format")
+):
+    query = {}
+
+    if type:
+        query["type"] = type
+    if status:
+        query["status"] = status
+    if user_id:
+        query["user_id"] = user_id
+
+    if from_date or to_date:
+        query["timestamp"] = {}
+        try:
+            if from_date:
+                query["timestamp"]["$gte"] = datetime.strptime(from_date, "%Y-%m-%d")
+            if to_date:
+                query["timestamp"]["$lte"] = datetime.strptime(to_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    transactions = []
+    try:
+        async for tx in db.transactions.find(query):
+            tx["_id"] = str(tx["_id"])
+            transactions.append(tx)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    if not transactions:
+            raise HTTPException(status_code=404, detail="No transactions found for given filters")
+
+    return transactions
+
+@router.get("/transactions/export", operation_id="export_transactions", dependencies=[Depends(require_role(["super_admin", "auditor"]))])
+async def export_transactions(
+    type: str = Query(None, description="Filter by transaction type (deposit/withdrawal)"),
+    status: str = Query(None, description="Filter by status (pending/approved/rejected)"),
+    user_id: str = Query(None, description="Filter by user ID"),
+    from_date: str = Query(None, description="Start date in YYYY-MM-DD format"),
+    to_date: str = Query(None, description="End date in YYYY-MM-DD format")
+):
+    query = {}
+
+    if type:
+        query["type"] = type
+    if status:
+        query["status"] = status
+    if user_id:
+        query["user_id"] = user_id
+
+    if from_date or to_date:
+        query["timestamp"] = {}
+        try:
+            if from_date:
+                query["timestamp"]["$gte"] = datetime.strptime(from_date, "%Y-%m-%d")
+            if to_date:
+                query["timestamp"]["$lte"] = datetime.strptime(to_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+
+    transactions = []
+    try:
+        async for tx in db.transactions.find(query):
+            tx["_id"] = str(tx["_id"])
+            transactions.append(tx)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    if not transactions:
+        raise HTTPException(status_code=404, detail="No transactions found for given filters")
+
+    output = StringIO()
+    fieldnames = ["_id", "user_id", "type", "status", "amount", "timestamp"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for tx in transactions:
+        writer.writerow({key: tx.get(key, "") for key in fieldnames})
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=transactions.csv"}
+    )
+
+@router.get("/users", operation_id="list_users", dependencies=[Depends(require_role(["super_admin", "moderator"]))])
+async def list_users(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(20, ge=1, le=100, description="Number of records to return"),
+    search: str = Query(None, description="Search by username or email")
+):
+    query = {}
+    if search:
+        query["$or"] = [
+            {"username": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}}
+        ]
+
+    users = []
+    try:
+        async for user in db.users.find(query).skip(skip).limit(limit):
+            user["_id"] = str(user["_id"])
+            users.append(user)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    if not users:
+        raise HTTPException(status_code=404, detail="No users found")
+
+    return users
+
+
+@router.get("/users/export", operation_id="export_users", dependencies=[Depends(require_role(["super_admin", "moderator"]))])
+async def export_users(
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
+    search: str = Query(None, description="Search by username or email")
+):
+    query = {}
+    if search:
+        query["$or"] = [
+            {"username": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}}
+        ]
+
+    users = []
+    try:
+        async for user in db.users.find(query).skip(skip).limit(limit):
+            user["_id"] = str(user["_id"])
+            users.append(user)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    if not users:
+        raise HTTPException(status_code=404, detail="No users found")
+
+    output = StringIO()
+    fieldnames = ["_id", "username", "email", "status", "created_at"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for user in users:
+        writer.writerow({key: user.get(key, "") for key in fieldnames})
+    output.seek(0)
+
+    return StreamingResponse(
+        output,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users.csv"}
+    )
+
+@router.get("/admin/alerts", operation_id="get_system_alerts", dependencies=[Depends(require_role(["super_admin", "moderator"]))])
+async def get_system_alerts():
+    alerts = []
+    try:
+        async for alert in db.alerts.find({}).sort("timestamp", -1):
+            alert["_id"] = str(alert["_id"])
+            alerts.append(alert)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    if not alerts:
+        raise HTTPException(status_code=404, detail="No alerts found")
+
+    return alerts
+
+@router.post("/admin/alerts/resolve/{alert_id}", operation_id="resolve_alert", dependencies=[Depends(require_role(["super_admin"]))])
+async def resolve_alert(alert_id: str):
+    try:
+        result = await db.alerts.update_one(
+            {"_id": ObjectId(alert_id)},
+            {"$set": {"status": "resolved", "resolved_at": datetime.utcnow()}}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        return {"message": "Alert resolved successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    
+

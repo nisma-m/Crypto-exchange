@@ -2,6 +2,8 @@ from fastapi import FastAPI, WebSocket
 from app.api import auth_routes, wallet_routes, transaction_routes, security_routes, admin_routes, admin_ws, ws_routes, admin_auth_routes
 from app.trading.routes.trading_routes import router as trading_routes
 from app.trading.websocket.trading_ws_routes import router as trading_ws_router
+from app.api import admin_routes
+
 
 app = FastAPI(title="Crypto Exchange Backend")
 

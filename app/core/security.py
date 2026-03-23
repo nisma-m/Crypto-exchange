@@ -9,3 +9,6 @@ def hash_password(password: str):
 def verify_password(password: str, hashed: str):
     password = password[:72]
     return pwd_context.verify(password, hashed)
+
+SECRET_KEY = "your_secret_key_here"
+ALGORITHM = "HS256"
