@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
 import jwt
+
 from app.database import db
 from app.core.security import verify_password, hash_password
 from app.config import settings
@@ -9,6 +10,7 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
 
 # -----------------------------
 # Register
@@ -20,17 +22,23 @@ async def register(email: str, password: str):
         raise HTTPException(status_code=400, detail="User already exists")
 
     hashed_pw = hash_password(password)
+
     result = await db.admins.insert_one({
         "username": email,
         "password_hash": hashed_pw,
-        "role": "super_admin",   # or assign dynamically
+        "role": "super_admin",
+        "is_suspended": False,
         "created_at": datetime.utcnow()
     })
 
     return {
         "message": "User registered successfully",
-        "data": {"id": str(result.inserted_id), "username": email}
+        "data": {
+            "id": str(result.inserted_id),
+            "username": email
+        }
     }
+
 
 # -----------------------------
 # Login
@@ -38,6 +46,7 @@ async def register(email: str, password: str):
 @router.post("/login")
 async def login(email: str, password: str):
     admin = await db.admins.find_one({"username": email})
+
     if not admin or not verify_password(password, admin["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
@@ -45,13 +54,17 @@ async def login(email: str, password: str):
         raise HTTPException(status_code=403, detail="Account suspended by admin")
 
     payload = {
-        "sub": str(admin["_id"]),   # ✅ use ObjectId string
+        "sub": str(admin["_id"]),
         "role": admin["role"],
-        "exp": datetime.utcnow() + timedelta(hours=2)
+        "exp": datetime.utcnow() + timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS)
     }
+
     token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
     return {
         "message": "Login successful",
-        "data": {"access_token": token, "token_type": "bearer"}
+        "data": {
+            "access_token": token,
+            "token_type": "bearer"
+        }
     }
