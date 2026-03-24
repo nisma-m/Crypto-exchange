@@ -1,31 +1,55 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Form
+from datetime import datetime
+
+from app.database import db
+from app.core.security import verify_password, hash_password
 from app.services.auth_service import register_user, login_user
 
-# ❌ REMOVE prefix="/auth"
+# -----------------------------
+# Router
+# -----------------------------
 router = APIRouter(tags=["Authentication"])
 
 
+# -----------------------------
+# Register
+# -----------------------------
 @router.post("/register")
 async def register(email: str, password: str):
+    existing = await db.admins.find_one({"username": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="User already exists")
 
-    result = await register_user(email, password)
+    hashed_pw = hash_password(password)
 
-    # optional error handling
-    if "error" in result:
-        raise HTTPException(status_code=400, detail=result["error"])
+    result = await db.admins.insert_one({
+        "username": email,
+        "password_hash": hashed_pw,
+        "role": "super_admin",
+        "is_suspended": False,
+        "created_at": datetime.utcnow()
+    })
 
     return {
         "message": "User registered successfully",
-        "data": result
+        "data": {
+            "id": str(result.inserted_id),
+            "username": email
+        }
     }
 
 
+# -----------------------------
+# Login (Service-based - CLEAN OPTION 3)
+# -----------------------------
 @router.post("/login")
-async def login(email: str, password: str):
+async def login(
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    result = await login_user(username, password)
 
-    result = await login_user(email, password)
-
-    # handle error
+    # handle service error
     if isinstance(result, dict) and "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
 

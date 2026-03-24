@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+venv/git add .
+__pycache__/
+*.pyc
+venv/
+*.pyc
+__pycache__/
+crypto_exchange.db
+git add app/ *

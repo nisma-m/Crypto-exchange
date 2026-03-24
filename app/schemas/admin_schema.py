@@ -1,10 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
 
-class UserStatusUpdate(BaseModel):
-    user_id: str
-    status: str
-
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -21,3 +17,19 @@ class TransactionResponse(BaseModel):
 class SuspendUser(BaseModel):
     user_id: str
     reason: Optional[str] = None
+
+class UserStatusUpdate(BaseModel):
+    user_id: str
+    status: str
+
+class MessageResponse(BaseModel):
+    message: str
+
+class TradeResponse(BaseModel):
+    id: str
+    user_id: str
+    symbol: str
+    price: float
+    quantity: float
+    side: str
+    timestamp: str
