@@ -8,24 +8,27 @@ from app.services.wallet_service import create_wallet
 
 
 async def register_user(email: str, password: str):
+    try:
+        # check existing user
+        existing_user = await users_collection.find_one({"email": email})
+        if existing_user:
+            return {"error": "User already exists"}
 
-    existing = await users_collection.find_one({"email": email})
+        # hash password
+        hashed_password = hash_password(password)
 
-    if existing:
-        raise HTTPException(status_code=400, detail="User already exists")
+        # create user
+        user = {
+            "email": email,
+            "password": hashed_password
+        }
 
-    hashed = hash_password(password)
+        await users_collection.insert_one(user)
 
-    secret = generate_2fa_secret()
+        return {"email": email}
 
-    user_doc = create_user_document(email, hashed, secret)
-
-    # 👇 default field for suspension
-    user_doc["is_suspended"] = False
-
-    result = await users_collection.insert_one(user_doc)
-
-    user_id = str(result.inserted_id)
+    except Exception as e:
+        return {"error": str(e)}
 
     # create default wallets
     await create_wallet(user_id, "BTC")

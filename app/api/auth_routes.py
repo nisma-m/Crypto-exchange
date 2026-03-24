@@ -1,17 +1,14 @@
-from fastapi import APIRouter, HTTPException
-from datetime import datetime, timedelta
-import jwt
+from fastapi import APIRouter, HTTPException, Form
+from datetime import datetime
+
 from app.database import db
 from app.core.security import verify_password, hash_password
-from app.config import settings
-from fastapi import Form
+from app.services.auth_service import register_user, login_user
 
-
-
-SECRET_KEY = settings.JWT_SECRET
-ALGORITHM = settings.JWT_ALGORITHM
-
-router = APIRouter(prefix="/auth", tags=["Authentication"])
+# -----------------------------
+# Router
+# -----------------------------
+router = APIRouter(tags=["Authentication"])
 
 
 # -----------------------------
@@ -43,29 +40,20 @@ async def register(email: str, password: str):
 
 
 # -----------------------------
-# Login
+# Login (Service-based - CLEAN OPTION 3)
 # -----------------------------
 @router.post("/login")
 async def login(
     username: str = Form(...),
     password: str = Form(...)
 ):
-    admin = await db.admins.find_one({"username": username})
+    result = await login_user(username, password)
 
-    if not admin or not verify_password(password, admin["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    if admin.get("is_suspended"):
-        raise HTTPException(status_code=403, detail="Account suspended")
-
-    payload = {
-        "sub": str(admin["_id"]),
-        "role": admin["role"]
-    }
-
-    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    # handle service error
+    if isinstance(result, dict) and "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
 
     return {
         "message": "Login successful",
-        "data": {"access_token": token}
+        "data": result
     }
