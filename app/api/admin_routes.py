@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Depends, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import io, csv
 from io import StringIO
 from app.core.jwt import get_current_admin
@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from fastapi import APIRouter, Depends
 from app.core.roles import role_required
+import traceback
 
 
 
@@ -146,58 +147,33 @@ async def seed_test_withdrawal(current_admin: dict = Depends(get_current_admin))
 
 
 @router.put("/withdrawal/approve/{transaction_id}")
-def approve_withdrawal(
+async def approve_withdrawal(
     transaction_id: str,
     admin_id: str,
     current_admin: dict = Depends(role_required("super_admin"))
 ):
-    try:
-        tx_id = ObjectId(transaction_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid transaction_id format")
+    result = await admin_service.approve_withdrawal(transaction_id, admin_id)
 
-    transaction = db.transactions.find_one({"_id": tx_id})
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not result:
+        raise HTTPException(status_code=400, detail="Cannot approve withdrawal")
 
-    if transaction.get("status") != "pending":
-        raise HTTPException(status_code=400, detail="Transaction not pending")
-
-    db.transactions.update_one(
-        {"_id": tx_id},
-        {"$set": {"status": "approved", "approved_by": admin_id}}
-    )
     return {"message": "Withdrawal approved successfully"}
 
-
-
-# Reject Withdrawal
+# -----------------------------
+# WITHDRAWAL REJECT ✅ FIXED
+# -----------------------------
 @router.put("/withdrawal/reject/{transaction_id}")
-def reject_withdrawal(
+async def reject_withdrawal(
     transaction_id: str,
     admin_id: str,
     current_admin: dict = Depends(role_required("super_admin"))
 ):
-    try:
-        tx_id = ObjectId(transaction_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid transaction_id format")
+    result = await admin_service.reject_withdrawal(transaction_id, admin_id)
 
-    transaction = db.transactions.find_one({"_id": tx_id})
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not result:
+        raise HTTPException(status_code=400, detail="Cannot reject withdrawal")
 
-    if transaction.get("status") != "pending":
-        raise HTTPException(status_code=400, detail="Transaction not pending")
-
-    db.transactions.update_one(
-        {"_id": tx_id},
-        {"$set": {"status": "rejected", "rejected_by": admin_id}}
-    )
     return {"message": "Withdrawal rejected successfully"}
-
-
-
 @router.get("/trades", operation_id="get_all_trades_service")
 async def get_all_trades(current_admin: dict = Depends(get_current_admin)):
     return await admin_service.get_all_trades()
@@ -259,29 +235,42 @@ async def filter_transactions(
 
 @router.get("/transactions/export", operation_id="export_transactions_service")
 async def export_transactions(current_admin: dict = Depends(get_current_admin)):
-    transactions = []
-    async for tx in db.transactions.find({}):
-        tx["_id"] = str(tx["_id"])
-        # Ensure all required fields exist
-        tx.setdefault("user_id", "")
-        tx.setdefault("type", "")
-        tx.setdefault("status", "")
-        tx.setdefault("amount", "")
-        tx.setdefault("created_at", "")
-        transactions.append(tx)
+    try:
+        transactions = []
+        async for tx in db.transactions.find({}):
+            tx["_id"] = str(tx["_id"])
+            tx["user_id"] = str(tx.get("user_id", ""))
+            tx["type"] = str(tx.get("type", ""))
+            tx["status"] = str(tx.get("status", ""))
+            tx["amount"] = str(tx.get("amount", ""))
+            
+            created_at = tx.get("created_at")
+            if isinstance(created_at, datetime):
+                tx["created_at"] = created_at.isoformat()
+            else:
+                tx["created_at"] = str(created_at or "")
+            
+            transactions.append(tx)
 
-    output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=["_id", "user_id", "type", "status", "amount", "created_at"])
-    writer.writeheader()
-    for tx in transactions:   # ✅ safe loop
-        writer.writerow(tx)   # instead of writerows()
-    output.seek(0)
+        output = StringIO()
+        fieldnames = ["_id", "user_id", "type", "status", "amount", "created_at"]
+        # ✅ ignore extra fields in the dict
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore')
+        writer.writeheader()
+        for tx in transactions:
+            writer.writerow(tx)
+        output.seek(0)
 
-    return StreamingResponse(
-        output,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=transactions.csv"}
-    )
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=transactions.csv"}
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
+    
 # -----------------------------
 # Stats & Activity Logs
 # -----------------------------
@@ -397,50 +386,20 @@ async def list_transactions(
 
     return transactions
 
-@router.get("/transactions/export", operation_id="export_transactions", dependencies=[Depends(require_role(["super_admin", "auditor"]))])
-async def export_transactions(
-    type: str = Query(None, description="Filter by transaction type (deposit/withdrawal)"),
-    status: str = Query(None, description="Filter by status (pending/approved/rejected)"),
-    user_id: str = Query(None, description="Filter by user ID"),
-    from_date: str = Query(None, description="Start date in YYYY-MM-DD format"),
-    to_date: str = Query(None, description="End date in YYYY-MM-DD format")
-):
-    query = {}
-
-    if type:
-        query["type"] = type
-    if status:
-        query["status"] = status
-    if user_id:
-        query["user_id"] = user_id
-
-    if from_date or to_date:
-        query["timestamp"] = {}
-        try:
-            if from_date:
-                query["timestamp"]["$gte"] = datetime.strptime(from_date, "%Y-%m-%d")
-            if to_date:
-                query["timestamp"]["$lte"] = datetime.strptime(to_date, "%Y-%m-%d")
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-
-    transactions = []
-    try:
-        async for tx in db.transactions.find(query):
-            tx["_id"] = str(tx["_id"])
-            transactions.append(tx)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
-    if not transactions:
-        raise HTTPException(status_code=404, detail="No transactions found for given filters")
+@router.get("/transactions/export")
+async def export_transactions(current_admin: dict = Depends(get_current_admin)):
+    transactions = await admin_service.get_all_transactions()
 
     output = StringIO()
-    fieldnames = ["_id", "user_id", "type", "status", "amount", "timestamp"]
-    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["_id", "user_id", "type", "status", "amount", "created_at"]
+    )
     writer.writeheader()
+
     for tx in transactions:
-        writer.writerow({key: tx.get(key, "") for key in fieldnames})
+        writer.writerow(tx)
+
     output.seek(0)
 
     return StreamingResponse(
